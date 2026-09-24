@@ -37,6 +37,8 @@ import {
   CapabilityLevel,
   ModuleKey,
 } from '@pixel/shared';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, isFirebaseConfigured, syncFirestoreCollection } from './lib/firebase.js';
 
 // Pre-seeded fallback data for offline/mock presentation
 const initialDealers: Dealer[] = [
@@ -255,6 +257,25 @@ export default function App() {
     },
   });
 
+  // Real-time Cloud Firestore Synchronizer
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return;
+    const unsubDealers = syncFirestoreCollection<Dealer>('dealers', (data) => {
+      if (data && data.length > 0) {
+        setDealers(data);
+      }
+    });
+    const unsubReleases = syncFirestoreCollection<AppRelease>('appReleases', (data) => {
+      if (data && data.length > 0) {
+        setReleases(data);
+      }
+    });
+    return () => {
+      unsubDealers();
+      unsubReleases();
+    };
+  }, []);
+
   // Add Dealer Action
   const handleAddDealer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -305,6 +326,13 @@ export default function App() {
 
     setShowAddDealerModal(false);
     setSelectedDealer(newDealer);
+
+    if (db && isFirebaseConfigured()) {
+      setDoc(doc(db, 'dealers', newDealer.dealerId), newDealer).catch((err) =>
+        console.warn('Firestore dealer write warning:', err)
+      );
+    }
+
     alert(`Dealer ${newDealer.businessName} created successfully with ID: ${newId}`);
   };
 
@@ -450,6 +478,11 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+              Firebase: pixel-distributor
+            </div>
+
             <a
               href="http://localhost:5001/health"
               target="_blank"

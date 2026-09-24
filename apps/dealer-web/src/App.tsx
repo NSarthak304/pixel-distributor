@@ -22,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   Lock,
+  Phone,
 } from 'lucide-react';
 import {
   Dealer,
@@ -32,6 +33,7 @@ import {
   ModuleKey,
   DashboardCardKey,
 } from '@pixel/shared';
+import { DealerPhoneAuth, isFirebaseConfigured } from './lib/firebase.js';
 
 // Pre-configured Tenant Scenarios (Specification Section 7)
 interface TenantContext {
@@ -227,6 +229,47 @@ export default function App() {
   const [isOffline, setIsOffline] = useState(false);
   const [showMandatoryUpdateModal, setShowMandatoryUpdateModal] = useState(false);
 
+  // Phone OTP Auth State
+  const [showPhoneAuthModal, setShowPhoneAuthModal] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('+91');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [authenticatedPhoneUser, setAuthenticatedPhoneUser] = useState<any>(null);
+  const [authError, setAuthError] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setIsSendingOtp(true);
+    try {
+      const verifier = DealerPhoneAuth.initRecaptcha('recaptcha-container');
+      if (!verifier) throw new Error('Recaptcha verifier initialization failed.');
+      const conf = await DealerPhoneAuth.sendOtp(phoneNumber, verifier);
+      setConfirmationResult(conf);
+      setOtpSent(true);
+    } catch (err: any) {
+      setAuthError(err.message || 'Failed to send SMS OTP.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      if (!confirmationResult) throw new Error('No active OTP request.');
+      const user = await DealerPhoneAuth.verifyOtp(confirmationResult, otpCode);
+      setAuthenticatedPhoneUser(user);
+      setShowPhoneAuthModal(false);
+      alert(`Authenticated successfully via Phone OTP: ${user.phoneNumber}`);
+    } catch (err: any) {
+      setAuthError(err.message || 'Invalid OTP code.');
+    }
+  };
+
   const tenant = TENANTS[currentTenantKey];
   const permissions = tenant.modules;
 
@@ -244,13 +287,22 @@ export default function App() {
             <Smartphone className="w-4 h-4" />
             Pixel Distributor • Unified PWA / APK
           </div>
-          <button
-            onClick={() => setActiveScreen(activeScreen === 'download' ? 'dashboard' : 'download')}
-            className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-semibold"
-          >
-            <Download className="w-3 h-3" />
-            {activeScreen === 'download' ? 'Back to App' : '/download Portal'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowPhoneAuthModal(true)}
+              className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-xs font-semibold"
+            >
+              <Phone className="w-3 h-3" />
+              {authenticatedPhoneUser ? 'Verified' : 'Phone OTP'}
+            </button>
+            <button
+              onClick={() => setActiveScreen(activeScreen === 'download' ? 'dashboard' : 'download')}
+              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded text-xs font-semibold"
+            >
+              <Download className="w-3 h-3" />
+              {activeScreen === 'download' ? 'Back' : '/download'}
+            </button>
+          </div>
         </div>
 
         {/* Tenant Switching Bar */}
@@ -703,6 +755,82 @@ export default function App() {
               <div className="text-[10px] text-slate-400">
                 Non-silent install adhering to Android FileProvider security
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* PHONE OTP MODAL */}
+        {showPhoneAuthModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-white shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-5 h-5 text-emerald-400" />
+                  <h3 className="font-bold text-sm">Dealer Phone OTP Login</h3>
+                </div>
+                <button
+                  onClick={() => setShowPhoneAuthModal(false)}
+                  className="text-slate-400 hover:text-white text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {authError && (
+                <div className="bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs p-2.5 rounded-lg mb-4">
+                  {authError}
+                </div>
+              )}
+
+              {!otpSent ? (
+                <form onSubmit={handleSendOtp} className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Mobile Number (India)</label>
+                    <input
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="+919876543210"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
+                      required
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Must include country code +91</p>
+                  </div>
+
+                  <div id="recaptcha-container"></div>
+
+                  <button
+                    type="submit"
+                    disabled={isSendingOtp}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg text-xs"
+                  >
+                    {isSendingOtp ? 'SENDING OTP...' : 'SEND SMS VERIFICATION CODE'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Enter 6-Digit Code</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      placeholder="123456"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-center tracking-widest text-white focus:outline-none focus:border-emerald-500 font-mono text-lg font-bold"
+                      required
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Sent to {phoneNumber}</p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-xs"
+                  >
+                    VERIFY & SIGN IN
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         )}
