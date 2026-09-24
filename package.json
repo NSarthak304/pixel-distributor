@@ -10,24 +10,31 @@
     "apps/dealer-web"
   ],
   "scripts": {
+    "dev": "tsx scripts/dev-all.ts",
+    "dev:backend": "tsx backend/src/index.ts",
+    "dev:admin": "npm run dev --workspace=@pixel/admin",
+    "dev:dealer": "npm run dev --workspace=@pixel/dealer-web",
+    "sync:push": "tsx scripts/excel-sync.ts push",
+    "sync:pull": "tsx scripts/excel-sync.ts pull",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
+    "build:all": "npm run build --workspace=@pixel/shared && npm run build --workspace=@pixel/admin && npm run build --workspace=@pixel/dealer-web",
     "lint": "echo \"Linting check passed.\""
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
     "@types/node": "^22.13.0",
-    "@types/supertest": "^7.2.1",
-    "supertest": "^7.3.0",
-    "tsx": "^4.23.15",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   },
   "dependencies": {
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "xlsx": "^0.18.5"
   }
 }
