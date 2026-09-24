@@ -11,6 +11,7 @@ import { OrderService } from './services/order.service.js';
 import { ReleaseService } from './services/release.service.js';
 import { AuditService } from './services/audit.service.js';
 import { ExcelEtlService } from './services/excel-etl.service.js';
+import { PdfInvoiceService } from './services/pdf-invoice.service.js';
 import {
   CreateDealerSchema,
   CreateProductSchema,
@@ -615,4 +616,49 @@ app.get('/api/v1/excel/export/:entity', (req: Request, res: Response) => {
   }
 
   res.status(404).json({ success: false, error: 'Entity export not supported' });
+});
+
+// =============================================================================
+// PDF INVOICE & DISPATCH CHALLAN ENDPOINTS
+// =============================================================================
+
+// Download Official Tax Invoice PDF for an Order
+app.get('/api/v1/orders/:orderId/invoice', async (req: Request, res: Response) => {
+  const order = globalStore.orders.get(req.params.orderId);
+  if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+
+  const dealer = globalStore.dealers.get(order.dealerId);
+  if (!dealer) return res.status(404).json({ success: false, error: 'Dealer not found' });
+
+  try {
+    const pdfBytes = await PdfInvoiceService.generateTaxInvoice(order, dealer);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Invoice_${order.orderId}.pdf"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'PDF generation error';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// Download Official Warehouse Dispatch Challan PDF for a Stock Transfer
+app.get('/api/v1/inventory/transfers/:transferId/challan', async (req: Request, res: Response) => {
+  const transfer = globalStore.stockTransfers.get(req.params.transferId);
+  if (!transfer) return res.status(404).json({ success: false, error: 'Transfer not found' });
+
+  const warehouse = globalStore.warehouses.get(transfer.sourceId);
+  if (!warehouse) return res.status(404).json({ success: false, error: 'Source warehouse not found' });
+
+  const dealer = globalStore.dealers.get(transfer.destinationId);
+  if (!dealer) return res.status(404).json({ success: false, error: 'Destination dealer not found' });
+
+  try {
+    const pdfBytes = await PdfInvoiceService.generateDispatchChallan(transfer, warehouse, dealer);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Challan_${transfer.transferId}.pdf"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'PDF generation error';
+    res.status(500).json({ success: false, error: message });
+  }
 });
