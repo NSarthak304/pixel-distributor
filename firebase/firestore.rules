@@ -1,0 +1,197 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // SECURITY HELPER FUNCTIONS
+    // =========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+
+    function getUserDealerId() {
+      return request.auth.token.dealerId;
+    }
+
+    function isUserActive() {
+      return isAuthenticated() && request.auth.token.status == 'ACTIVE';
+    }
+
+    function isCentralAdmin() {
+      return isAuthenticated() && (getUserRole() == 'SUPER_ADMIN' || getUserRole() == 'ADMIN');
+    }
+
+    function isInventoryManager() {
+      return isAuthenticated() && (isCentralAdmin() || getUserRole() == 'INVENTORY_MANAGER');
+    }
+
+    function belongsToDealer(targetDealerId) {
+      return isUserActive() && getUserDealerId() == targetDealerId;
+    }
+
+    // =========================================================================
+    // USER ACCOUNTS & DEALER PROFILES
+    // =========================================================================
+
+    match /users/{userId} {
+      // Users can read their own profile; Central Admin can read/manage all
+      allow read: if isCentralAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      // Profile mutations strictly reserved for Admin or self basic updates
+      allow create, delete: if isCentralAdmin();
+      allow update: if isCentralAdmin() || (isAuthenticated() && request.auth.uid == userId);
+    }
+
+    match /dealers/{dealerId} {
+      // Central admin can read all dealers; dealers can only read their own profile
+      allow read: if isCentralAdmin() || belongsToDealer(dealerId);
+      allow write: if isCentralAdmin();
+    }
+
+    match /roles/{roleId} {
+      allow read: if isAuthenticated();
+      allow write: if isCentralAdmin();
+    }
+
+    match /permissions/{permissionId} {
+      allow read: if isAuthenticated();
+      allow write: if isCentralAdmin();
+    }
+
+    match /userPermissions/{permissionDocId} {
+      // Central admin or dealer checking own permissions
+      allow read: if isCentralAdmin() || (isUserActive() && permissionDocId.matches('^' + getUserDealerId() + '.*'));
+      allow write: if isCentralAdmin();
+    }
+
+    match /appConfigurations/{dealerId} {
+      allow read: if isCentralAdmin() || belongsToDealer(dealerId);
+      allow write: if isCentralAdmin();
+    }
+
+    // =========================================================================
+    // PRODUCTS & CATALOG MASTER
+    // =========================================================================
+
+    match /products/{productId} {
+      // Active users can read catalog (purchasePrice is stripped/masked via API or function projection)
+      allow read: if isUserActive();
+      allow write: if isInventoryManager();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isUserActive();
+      allow write: if isInventoryManager();
+    }
+
+    match /warehouses/{warehouseId} {
+      allow read: if isUserActive();
+      allow write: if isInventoryManager();
+    }
+
+    // =========================================================================
+    // INVENTORY & STOCK TRANSACTIONS
+    // =========================================================================
+
+    match /inventory/{inventoryId} {
+      // Central admin can see all; dealers can only see their own local stock or central stock
+      allow read: if isCentralAdmin() || 
+        (isUserActive() && (resource.data.dealerId == getUserDealerId() || resource.data.dealerId == 'CENTRAL'));
+      // Direct write disabled for standard dealers; mutations handled via transactions/functions
+      allow write: if isInventoryManager();
+    }
+
+    match /inventoryTransactions/{transactionId} {
+      // Strictly append-only: ledger records can NEVER be modified or deleted
+      allow read: if isCentralAdmin() || belongsToDealer(resource.data.dealerId);
+      allow create: if isCentralAdmin() || 
+        (isUserActive() && request.resource.data.dealerId == getUserDealerId());
+      allow update, delete: if false;
+    }
+
+    match /stockTransfers/{transferId} {
+      allow read: if isCentralAdmin() || belongsToDealer(resource.data.dealerId);
+      allow create: if isCentralAdmin() || 
+        (isUserActive() && request.resource.data.dealerId == getUserDealerId());
+      allow update: if isCentralAdmin() || 
+        (belongsToDealer(resource.data.dealerId) && resource.data.status in ['REQUESTED']);
+      allow delete: if isCentralAdmin();
+    }
+
+    // =========================================================================
+    // ORDERS & ORDER ITEMS
+    // =========================================================================
+
+    match /orders/{orderId} {
+      allow read: if isCentralAdmin() || belongsToDealer(resource.data.dealerId);
+      allow create: if isCentralAdmin() || 
+        (isUserActive() && request.resource.data.dealerId == getUserDealerId());
+      allow update: if isCentralAdmin() || 
+        (belongsToDealer(resource.data.dealerId) && resource.data.status in ['DRAFT', 'PENDING']);
+      allow delete: if isCentralAdmin();
+
+      match /orderItems/{itemId} {
+        allow read: if isCentralAdmin() || belongsToDealer(get(/databases/$(database)/documents/orders/$(orderId)).data.dealerId);
+        allow write: if isCentralAdmin() || 
+          (isUserActive() && get(/databases/$(database)/documents/orders/$(orderId)).data.dealerId == getUserDealerId());
+      }
+    }
+
+    // =========================================================================
+    // CUSTOMERS & PAYMENTS
+    // =========================================================================
+
+    match /customers/{customerId} {
+      allow read: if isCentralAdmin() || belongsToDealer(resource.data.dealerId);
+      allow create, update: if isCentralAdmin() || 
+        (isUserActive() && request.resource.data.dealerId == getUserDealerId());
+      allow delete: if isCentralAdmin() || belongsToDealer(resource.data.dealerId);
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isCentralAdmin() || belongsToDealer(resource.data.dealerId);
+      allow create: if isCentralAdmin() || 
+        (isUserActive() && request.resource.data.dealerId == getUserDealerId());
+      allow update: if isCentralAdmin();
+      allow delete: if false; // Financial records are immutable
+    }
+
+    // =========================================================================
+    // NOTIFICATIONS & AUDIT LOGS
+    // =========================================================================
+
+    match /notifications/{notificationId} {
+      allow read: if isCentralAdmin() || 
+        (isUserActive() && (resource.data.dealerId == getUserDealerId() || resource.data.recipientType == 'BROADCAST'));
+      allow create: if isCentralAdmin();
+      allow update: if isUserActive() && 
+        (resource.data.dealerId == getUserDealerId() || resource.data.userId == request.auth.uid);
+      allow delete: if isCentralAdmin();
+    }
+
+    match /activityLogs/{logId} {
+      allow read: if isCentralAdmin();
+      allow create: if isUserActive();
+      allow update, delete: if false; // Audit logs are immutable
+    }
+
+    // =========================================================================
+    // APP RELEASES & SYSTEM SETTINGS
+    // =========================================================================
+
+    match /appReleases/{releaseId} {
+      allow read: if isAuthenticated();
+      allow write: if isCentralAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isCentralAdmin();
+    }
+  }
+}

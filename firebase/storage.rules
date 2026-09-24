@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isCentralAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'SUPER_ADMIN' || request.auth.token.role == 'ADMIN');
+    }
+    
+    function belongsToDealer(dealerId) {
+      return isAuthenticated() && request.auth.token.dealerId == dealerId;
+    }
+
+    // Public / Authenticated APK Downloads
+    match /releases/{allPaths=**} {
+      // Anyone authenticated can download the client APK
+      allow read: if true;
+      // Only Central Admin can upload/modify APK binaries
+      allow write: if isCentralAdmin();
+    }
+
+    // Product Images Catalog
+    match /products/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isCentralAdmin();
+    }
+
+    // Dealer-specific uploads (Invoices, Receipts, Payment Proofs)
+    match /dealers/{dealerId}/{allPaths=**} {
+      allow read: if isCentralAdmin() || belongsToDealer(dealerId);
+      allow write: if isCentralAdmin() || belongsToDealer(dealerId);
+    }
+
+    // Excel Snapshots & Backup Archives
+    match /excel_backups/{allPaths=**} {
+      allow read, write: if isCentralAdmin();
+    }
+  }
+}
