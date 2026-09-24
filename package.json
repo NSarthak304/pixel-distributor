@@ -15,7 +15,7 @@
     "sync:push": "tsx scripts/excel-sync.ts push",
     "sync:pull": "tsx scripts/excel-sync.ts pull",
     "excel:open": "cmd.exe /c start excel/templates/Pixel_Distributor_Admin.xlsx",
-    "test": "vitest run",
+    "test": "npm run build --workspace=@pixel/shared && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "build:all": "npm run build --workspace=@pixel/shared && npm run build --workspace=@pixel/dealer-web",
