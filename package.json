@@ -2,24 +2,23 @@
   "name": "pixel-distributor",
   "version": "1.0.0",
   "private": true,
-  "description": "Pixel Distributor - Centralized Multi-Tenant Distribution Management System",
+  "description": "Pixel Distributor - Plan A: Excel-First Administration & Live Firebase Platform",
   "workspaces": [
     "shared",
     "backend",
-    "apps/admin",
     "apps/dealer-web"
   ],
   "scripts": {
     "dev": "tsx scripts/dev-all.ts",
     "dev:backend": "tsx backend/src/index.ts",
-    "dev:admin": "npm run dev --workspace=@pixel/admin",
     "dev:dealer": "npm run dev --workspace=@pixel/dealer-web",
     "sync:push": "tsx scripts/excel-sync.ts push",
     "sync:pull": "tsx scripts/excel-sync.ts pull",
+    "excel:open": "cmd.exe /c start excel/templates/Pixel_Distributor_Admin.xlsx",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
-    "build:all": "npm run build --workspace=@pixel/shared && npm run build --workspace=@pixel/admin && npm run build --workspace=@pixel/dealer-web",
+    "build:all": "npm run build --workspace=@pixel/shared && npm run build --workspace=@pixel/dealer-web",
     "lint": "echo \"Linting check passed.\""
   },
   "devDependencies": {

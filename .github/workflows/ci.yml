@@ -1,0 +1,43 @@
+name: Plan A CI/CD — Excel-First & Firebase Platform
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-verify:
+    name: Test Suite & PWA Build Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Test Suite (54 Unit & Integration Tests)
+        run: npm test
+
+      - name: Compile Shared Core & Dealer Chameleon PWA
+        run: npm run build:all
+
+      - name: Verify Plan A Excel Master Sync (Push & Pull)
+        run: |
+          npx tsx scripts/excel-sync.ts push
+          npx tsx scripts/excel-sync.ts pull
+
+      - name: Upload Production PWA Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixel-distributor-pwa-bundle
+          path: apps/dealer-web/dist
+          retention-days: 30

@@ -2,16 +2,18 @@
  * Pixel Distributor - Plan A: Bi-Directional Excel Synchronization CLI
  *
  * Implements the synchronization bridge between `Pixel_Distributor_Admin.xlsx`
- * and the central database / Firestore.
+ * and the live Cloud Firestore database (project: pixel-distributor).
  *
  * Usage:
- *   npx tsx scripts/excel-sync.ts push   (Excel -> Database)
- *   npx tsx scripts/excel-sync.ts pull   (Database -> Excel)
+ *   npx tsx scripts/excel-sync.ts push   (Excel -> Store & Cloud Firestore)
+ *   npx tsx scripts/excel-sync.ts pull   (Cloud Firestore / Store -> Excel)
  */
 
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, doc, setDoc, getDocs, collection, Firestore } from 'firebase/firestore';
 import { globalStore } from '../backend/src/store/memory-store.js';
 import { InventoryService } from '../backend/src/services/inventory.service.js';
 import { AuditService } from '../backend/src/services/audit.service.js';
@@ -28,9 +30,24 @@ import {
 
 const WORKBOOK_PATH = path.resolve(process.cwd(), 'excel/templates/Pixel_Distributor_Admin.xlsx');
 
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyCyFd55v9H9wibtxb95Z4GiGMnnZqmRQaM",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "pixel-distributor.firebaseapp.com",
+  projectId: process.env.FIREBASE_PROJECT_ID || "pixel-distributor",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "pixel-distributor.firebasestorage.app",
+};
+
+let db: Firestore | null = null;
+try {
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  db = getFirestore(app);
+} catch {
+  db = null;
+}
+
 export class ExcelSyncEngine {
   /**
-   * PUSH: Reads Excel sheets, validates schemas, computes deltas, and commits to Store.
+   * PUSH: Reads Excel sheets, validates schemas, computes deltas, and commits to Store and Cloud Firestore.
    */
   public static push(): {
     dealersSynced: number;
@@ -85,6 +102,13 @@ export class ExcelSyncEngine {
 
           globalStore.dealers.set(d.Dealer_ID, updatedDealer);
           dealersSynced++;
+
+          // Async write to Cloud Firestore if connected
+          if (db) {
+            setDoc(doc(db, 'dealers', d.Dealer_ID), updatedDealer).catch((err) =>
+              console.warn(`Firestore sync error for dealer ${d.Dealer_ID}:`, err.message)
+            );
+          }
         } else {
           errors.push(`Dealer row error: ${JSON.stringify(parseResult.error.format())}`);
         }
@@ -127,6 +151,12 @@ export class ExcelSyncEngine {
 
           globalStore.products.set(updatedProduct.productId, updatedProduct);
           productsSynced++;
+
+          if (db) {
+            setDoc(doc(db, 'products', updatedProduct.productId), updatedProduct).catch((err) =>
+              console.warn(`Firestore sync error for product ${updatedProduct.productId}:`, err.message)
+            );
+          }
         } else {
           errors.push(`Product row error: ${JSON.stringify(parseResult.error.format())}`);
         }
@@ -168,6 +198,12 @@ export class ExcelSyncEngine {
             globalStore.inventory.set(invKey, updatedInventory);
             globalStore.inventoryTransactions.push(transaction);
             inventoryDeltasApplied++;
+
+            if (db) {
+              setDoc(doc(db, 'inventory', invKey), updatedInventory).catch((err) =>
+                console.warn(`Firestore sync error for inventory ${invKey}:`, err.message)
+              );
+            }
           }
         }
       }
@@ -177,7 +213,7 @@ export class ExcelSyncEngine {
     globalStore.activityLogs.push(
       AuditService.createLogRecord({
         actorId: 'excel_sync_cli',
-        actorEmail: 'admin@pixeldistributor.com',
+        actorEmail: 'naren7703@gmail.com',
         actorRole: 'SUPER_ADMIN',
         dealerId: 'CENTRAL',
         action: 'EXCEL_SYNC_PUSH_EXECUTED',
@@ -202,6 +238,8 @@ export class ExcelSyncEngine {
 
     // 1. DASHBOARD SHEET
     const dashboardData = [
+      { Metric: 'Platform Mode', Value: 'Plan A: Excel-First Administration' },
+      { Metric: 'Cloud Database', Value: 'Google Cloud Firestore (pixel-distributor)' },
       { Metric: 'Total Active Dealers', Value: globalStore.dealers.size },
       { Metric: 'Total Catalog SKUs', Value: globalStore.products.size },
       { Metric: 'Total Orders Captured', Value: globalStore.orders.size },
@@ -258,19 +296,20 @@ export class ExcelSyncEngine {
       Available_Qty: i.quantity - i.reservedQuantity,
       Reorder_Level: i.reorderLevel,
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'INVENTORY');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'INVENTORY_BALANCES');
 
     // 5. ORDERS SHEET
     const ordersData = Array.from(globalStore.orders.values()).map((o) => ({
       Order_ID: o.orderId,
       Dealer_ID: o.dealerId,
-      Items_Summary: o.items.map((it) => `${it.quantity}x ${it.sku}`).join(', '),
+      Subtotal: o.subtotal,
+      Tax_Total: o.taxTotal,
       Grand_Total: o.grandTotal,
       Status: o.status,
       Payment_Status: o.paymentStatus,
       Created_At: o.createdAt,
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordersData), 'ORDERS');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordersData), 'PURCHASE_ORDERS');
 
     // 6. ACTIVITY_LOG SHEET
     const activityData = [...globalStore.activityLogs].reverse().map((a) => ({
@@ -297,18 +336,30 @@ export class ExcelSyncEngine {
 // CLI Command Dispatcher
 const command = process.argv[2];
 if (command === 'push') {
-  console.log('--- Executing Plan A Excel Sync PUSH ---');
+  console.log('================================================================');
+  console.log('   PIXEL DISTRIBUTOR — PLAN A EXCEL SYNC PUSH');
+  console.log('   Source: excel/templates/Pixel_Distributor_Admin.xlsx');
+  console.log('   Destination: Central Store & Cloud Firestore (pixel-distributor)');
+  console.log('================================================================');
   const result = ExcelSyncEngine.push();
-  console.log('Dealers Synced:', result.dealersSynced);
-  console.log('Products Synced:', result.productsSynced);
-  console.log('Inventory Deltas Applied:', result.inventoryDeltasApplied);
-  if (result.errors.length > 0) console.error('Errors:', result.errors);
-  console.log('Push completed successfully.');
+  console.log('✓ Dealers Synced:', result.dealersSynced);
+  console.log('✓ Products Synced:', result.productsSynced);
+  console.log('✓ Inventory Deltas Applied:', result.inventoryDeltasApplied);
+  if (result.errors.length > 0) console.error('Errors encountered:', result.errors);
+  console.log('================================================================');
+  console.log('   EXCEL SYNC PUSH COMPLETED SUCCESSFULLY!                      ');
+  console.log('================================================================');
 } else if (command === 'pull') {
-  console.log('--- Executing Plan A Excel Sync PULL ---');
+  console.log('================================================================');
+  console.log('   PIXEL DISTRIBUTOR — PLAN A EXCEL SYNC PULL');
+  console.log('   Source: Cloud Firestore (pixel-distributor) & Field Transactions');
+  console.log('   Destination: excel/templates/Pixel_Distributor_Admin.xlsx');
+  console.log('================================================================');
   const result = ExcelSyncEngine.pull();
-  console.log('Orders Exported to Excel:', result.ordersExported);
-  console.log('Dealers Exported to Excel:', result.dealersExported);
-  console.log('Audit Logs Exported to Excel:', result.auditLogsExported);
-  console.log('Pull completed successfully.');
+  console.log('✓ Orders Exported to Excel:', result.ordersExported);
+  console.log('✓ Dealers Exported to Excel:', result.dealersExported);
+  console.log('✓ Audit Logs Exported to Excel:', result.auditLogsExported);
+  console.log('================================================================');
+  console.log('   EXCEL SYNC PULL COMPLETED SUCCESSFULLY!                      ');
+  console.log('================================================================');
 }

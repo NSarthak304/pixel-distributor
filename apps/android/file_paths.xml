@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Secure isolated cache directory for downloaded update APKs -->
-    <external-cache-path name="apk_updates" path="updates/" />
-    <cache-path name="internal_apk_updates" path="updates/" />
-</paths>
