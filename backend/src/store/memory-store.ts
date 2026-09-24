@@ -289,7 +289,21 @@ export class MemoryStore {
     this.userPermissions.set(provC.permissionProfile.userPermissionId, provC.permissionProfile);
     this.appConfigurations.set(provC.appConfiguration.configId, provC.appConfiguration);
 
-    // 7. Seed Active APK Release
+    // 7. Seed Central Super Admin User
+    const superAdmin: User = {
+      userId: 'usr_admin_naren',
+      dealerId: 'CENTRAL',
+      email: 'naren7703@gmail.com',
+      displayName: 'Naren (Super Admin)',
+      phone: '+919876543210',
+      role: 'SUPER_ADMIN',
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.users.set(superAdmin.userId, superAdmin);
+
+    // 8. Seed Active APK Release
     const rel1: AppRelease = {
       releaseId: 'REL-v1.0.0',
       version: '1.0.0',
@@ -303,7 +317,7 @@ export class MemoryStore {
       minimumVersionCode: 100,
       mandatory: false,
       status: 'ACTIVE',
-      publishedBy: 'usr_admin_01',
+      publishedBy: superAdmin.userId,
       createdAt: now,
     };
     this.appReleases.set(rel1.releaseId, rel1);

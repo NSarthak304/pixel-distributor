@@ -462,12 +462,12 @@ export default function App() {
             </a>
 
             <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-semibold flex items-center justify-center text-sm">
-                SA
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center text-sm shadow-sm">
+                NA
               </div>
               <div className="text-left text-xs">
                 <div className="font-semibold text-slate-700">Super Admin</div>
-                <div className="text-slate-400">admin@pixel.in</div>
+                <div className="text-slate-400">naren7703@gmail.com</div>
               </div>
             </div>
           </div>
