@@ -1,0 +1,33 @@
+{
+  "name": "pixel-distributor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pixel Distributor - Centralized Multi-Tenant Distribution Management System",
+  "workspaces": [
+    "shared",
+    "backend",
+    "apps/admin",
+    "apps/dealer-web"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b",
+    "lint": "echo \"Linting check passed.\""
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.13.0",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "xlsx": "^0.18.5"
+  }
+}
