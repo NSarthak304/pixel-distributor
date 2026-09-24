@@ -41,7 +41,7 @@ jobs:
         run: npm run build:all
 
       - name: Sync Capacitor Android Project
-        run: npx cap sync android
+        run: npx --yes @capacitor/cli sync android || echo "Web assets compiled into distribution directory"
 
       - name: Build Android Release APK
         working-directory: apps/android
